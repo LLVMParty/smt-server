@@ -1943,6 +1943,7 @@ version = "0.1.0"
 dependencies = [
  "binbit",
  "blake3",
+ "pkg-config",
  "qfbvsmtrs",
  "rumba-core",
  "rusqlite",

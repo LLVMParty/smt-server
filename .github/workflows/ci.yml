@@ -36,6 +36,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ${{ matrix.os }}-stable
+      - name: Install GMP and MPFR (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgmp-dev libmpfr-dev pkg-config
+      - name: Install GMP and MPFR (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install gmp mpfr pkg-config
+          # brew's gmp/mpfr .pc files are not on the default search path.
+          echo "PKG_CONFIG_PATH=$(brew --prefix)/lib/pkgconfig" >> "$GITHUB_ENV"
       - name: Format
         run: cargo fmt --all -- --check
       - name: Test

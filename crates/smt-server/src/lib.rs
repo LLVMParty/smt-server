@@ -1,11 +1,13 @@
 //! Reference server-side implementation for the SMT wire protocol.
 //!
-//! The crate provides a small TCP server, binary request handling, native Z3
-//! and binbit solver backends, backend racing, request/response caching, and a
-//! compact SMT-LIB frontend.
+//! The crate provides a small TCP server, binary request handling, native Z3,
+//! binbit, and Bitwuzla solver backends, backend racing, request/response
+//! caching, and a compact SMT-LIB frontend.
 
 pub mod backend;
 pub mod binbit_backend;
+pub mod bitwuzla_backend;
+pub mod bitwuzla_bindings;
 pub mod cache;
 pub mod command_router;
 pub mod pool;
@@ -21,6 +23,7 @@ pub mod z3_backend;
 
 pub use backend::{Backend, CancellationToken, QueryResult, QueryStatus, SolveContext};
 pub use binbit_backend::BinbitBackend;
+pub use bitwuzla_backend::BitwuzlaBackend;
 pub use cache::{cache_key_for_payload, rebind_cached_response, CacheStats, ResponseCache};
 pub use command_router::CommandRouterBackend;
 pub use pool::PooledBackend;

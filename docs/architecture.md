@@ -78,7 +78,8 @@ CommandRouterBackend
     -> RacingBackend(default budget: 30s)
        ├── Z3Backend
        ├── BinbitBackend
-       └── QfbvsmtrsBackend
+       ├── QfbvsmtrsBackend
+       └── BitwuzlaBackend
 ```
 
 Backend responsibilities:
@@ -86,6 +87,7 @@ Backend responsibilities:
 - `Z3Backend` translates validated wire IR to the Rust `z3` crate and supports solve, model extraction, named unsat cores, and bit-hunt optimization.
 - `BinbitBackend` translates validated wire IR to `binbit` and supports solve, model extraction, named unsat cores, and optimization helpers.
 - `QfbvsmtrsBackend` lowers wire requests into the standalone qfbvsmtrs IR and uses the pure-Rust bit-blast/SAT pipeline.
+- `BitwuzlaBackend` translates validated wire IR to the official Bitwuzla C library, linked against a prebuilt static archive fetched at build time, and supports solve, model extraction, named unsat cores via unsat assumptions, and bit-hunt optimization. Linux/macOS and the Windows `gnu` target fetch the upstream Bitwuzla 0.9.1 release and resolve GMP/MPFR via pkg-config; the Windows `msvc` target fetches a self-contained MSVC archive (rebuilt from the 0.9.1 source under `cl.exe`, with GMP/MPFR statically linked in) published on the [bitwuzla-msvc](https://github.com/LLVMParty/bitwuzla-msvc) fork's GitHub release.
 - `RumbaBackend` handles `SIMPLIFY` for supported 64-bit-or-smaller MBA expression islands. Unsupported simplifications return the original target expression rather than a wrong rewrite.
 
 `RacingBackend` returns the first conclusive answer and logs later disagreements for investigation. `UNKNOWN` is safe and means no backend produced a conclusive answer within the applicable budget.

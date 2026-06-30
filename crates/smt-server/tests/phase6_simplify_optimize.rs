@@ -167,6 +167,28 @@ fn z3_backend_optimization_uses_bit_hunt() {
     assert_eq!(optimum.optimum.bytes, vec![5]);
 }
 
+#[test]
+fn bitwuzla_backend_optimization_uses_bit_hunt() {
+    let mut builder = ExprBuilder::new();
+    let x = builder.bv_var("x", 4).unwrap();
+    let five = builder.bv_const(5, 4).unwrap();
+    let ge = builder.bv_uge(x, five).unwrap();
+    builder.assert(ge).unwrap();
+    let request = builder
+        .build_minimize_request(28, x, false, 0, false)
+        .unwrap();
+    let response = BinaryResponse::parse(
+        &handle_binary_frame(&request, &smt_server::BitwuzlaBackend)
+            .unwrap()
+            .encode()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(response.envelope.status, Status::Sat);
+    let optimum = OptimizationValueBlock::decode(&response.payload, false).unwrap();
+    assert_eq!(optimum.optimum.bytes, vec![5]);
+}
+
 struct BadModelBackend;
 impl Backend for BadModelBackend {
     fn name(&self) -> &'static str {

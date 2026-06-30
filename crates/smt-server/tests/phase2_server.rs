@@ -82,11 +82,14 @@ fn solve_backends_intern_duplicate_wire_bv_symbols_by_name() {
     let binbit = BinbitBackend;
     let z3 = Z3Backend;
     let qfbvsmtrs = QfbvsmtrsBackend;
-    for (name, backend) in [
+    let bitwuzla = smt_server::BitwuzlaBackend;
+    let backends: [(&str, &dyn Backend); 4] = [
         ("binbit", &binbit as &dyn Backend),
         ("z3", &z3 as &dyn Backend),
         ("qfbvsmtrs", &qfbvsmtrs as &dyn Backend),
-    ] {
+        ("bitwuzla", &bitwuzla as &dyn Backend),
+    ];
+    for (name, backend) in backends {
         let request = request_with_duplicate_bv_symbol_not_equal(0x4455_5000);
         let response = handle_binary_frame(&request, backend)
             .unwrap()
@@ -102,11 +105,14 @@ fn solve_backends_return_models_for_duplicate_wire_bv_symbols() {
     let binbit = BinbitBackend;
     let z3 = Z3Backend;
     let qfbvsmtrs = QfbvsmtrsBackend;
-    for (name, backend) in [
+    let bitwuzla = smt_server::BitwuzlaBackend;
+    let backends: [(&str, &dyn Backend); 4] = [
         ("binbit", &binbit as &dyn Backend),
         ("z3", &z3 as &dyn Backend),
         ("qfbvsmtrs", &qfbvsmtrs as &dyn Backend),
-    ] {
+        ("bitwuzla", &bitwuzla as &dyn Backend),
+    ];
+    for (name, backend) in backends {
         let request = request_with_duplicate_bv_symbol_model(0x4455_5001);
         let response = handle_binary_frame(&request, backend)
             .unwrap()

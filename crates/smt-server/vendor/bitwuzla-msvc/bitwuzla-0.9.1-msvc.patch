@@ -1,0 +1,48 @@
+diff --git a/src/main/time_limit.cpp b/src/main/time_limit.cpp
+index 656b10a..e517cd1 100644
+--- a/src/main/time_limit.cpp
++++ b/src/main/time_limit.cpp
+@@ -1,11 +1,14 @@
+ #include "main/time_limit.h"
+ 
+-#include <pthread.h>  // Required for workaround
++#ifndef _MSC_VER
++#include <pthread.h>  // glibc <2.34 condvar workaround; irrelevant on Windows
++#endif
+ 
+ #include <condition_variable>
+ #include <cstdlib>
+ #include <iostream>
+ #include <thread>
++#include <chrono>
+ 
+ #include "bitwuzla/cpp/parser.h"
+ 
+@@ -13,6 +16,7 @@ namespace bzla::main {
+ 
+ // Workaround for condition variables in glibc < 2.34 to avoid segfault before
+ // exiting: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=58909
++#ifndef _MSC_VER
+ void
+ pthread_cond_var_bug_workaround()
+ {
+@@ -26,6 +30,7 @@ pthread_cond_var_bug_workaround()
+   pthread_cond_timedwait(&c, &mt, &ts);
+   pthread_cond_wait(&c, &mt);
+ }
++#endif
+ 
+ using namespace std::chrono_literals;
+ 
+diff --git a/src/util/integer.h b/src/util/integer.h
+index 0843adc..a45d56c 100644
+--- a/src/util/integer.h
++++ b/src/util/integer.h
+@@ -15,6 +15,7 @@
+ 
+ #include <functional>
+ #include <cstdint>
++#include <string>
+ 
+ namespace bzla::util {
+ 
