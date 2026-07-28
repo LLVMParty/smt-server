@@ -1,11 +1,8 @@
 use std::collections::HashMap;
-use std::panic::{catch_unwind, set_hook, take_hook, AssertUnwindSafe};
-use std::sync::Mutex;
 
 use rumba_core::{
     expr::{Expr as RumbaExpr, VarId},
     simplify::simplify_mba,
-    varint::{make_mask, VarInt},
 };
 use smt_wire::raw::{
     tag, BinaryRequest, Command, ExprBuilder, ExprView, NodeRef, RawNode, SimplifyBlock, WireError,
@@ -14,9 +11,9 @@ use smt_wire::raw::{
 use crate::backend::{Backend, QueryResult, SolveContext};
 
 const MAX_RUMBA_WIDTH: u32 = 64;
+/// Mirrors rumba's own (crate-private) variable cap: past it the solver refuses the
+/// island with `SolveError::TooManyVariables`, so stop converting before that point.
 const MAX_RUMBA_VARIABLES: usize = 20;
-
-static RUMBA_PANIC_HOOK_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Default)]
 pub struct RumbaBackend;
@@ -132,7 +129,7 @@ impl<'a> IslandSimplifier<'a> {
 
     /// Convert the MBA island rooted at `reference`, simplify it with Rumba, and lower
     /// the result back into the builder. Returns `None` (so the caller copies the node
-    /// structurally instead) if the island exceeds the variable cap or Rumba panics.
+    /// structurally instead) if the island exceeds the variable cap or Rumba declines it.
     fn try_island(
         &mut self,
         reference: NodeRef,
@@ -146,9 +143,11 @@ impl<'a> IslandSimplifier<'a> {
             None => return Ok(None),
         };
         let vars = conversion.vars;
-        let simplified = match simplify_mba_catching_panic(expr, bits) {
-            Some(simplified) => simplified,
-            None => return Ok(None),
+        // A `SolveError` means Rumba could not handle this island, not that the request
+        // is bad: leave the island alone and let the caller copy it structurally.
+        let simplified = match simplify_mba(expr, bits) {
+            Ok(simplified) => simplified,
+            Err(_) => return Ok(None),
         };
         let root = self.lower(&simplified, width, &vars)?;
         Ok(Some(root))
@@ -172,14 +171,14 @@ impl<'a> IslandSimplifier<'a> {
                     format!("unknown Rumba variable v{}", var.0),
                 )),
             },
-            RumbaExpr::Const(value) => self.builder.bv_const(value.get(mask), width),
+            RumbaExpr::Const(value) => self.builder.bv_const(value & mask, width),
             RumbaExpr::Not(child) => {
                 let child = self.lower(child, width, vars)?;
                 self.builder.bv_not(child)
             }
             RumbaExpr::Scale(coeff, child) => {
                 let child = self.lower(child, width, vars)?;
-                let coeff = self.builder.bv_const(coeff.get(mask), width)?;
+                let coeff = self.builder.bv_const(coeff & mask, width)?;
                 self.builder.bv_mul(coeff, child)
             }
             RumbaExpr::And(children) => {
@@ -425,9 +424,9 @@ impl<'a> IslandConversion<'a> {
         }
         Ok(match node.tag {
             tag::BV_VAR => self.named(reference, &node)?,
-            tag::BV_CONST if node.width <= MAX_RUMBA_WIDTH => Some(RumbaExpr::Const(VarInt::from(
-                node.payload & mask_for_width(self.width),
-            ))),
+            tag::BV_CONST if node.width <= MAX_RUMBA_WIDTH => {
+                Some(RumbaExpr::Const(node.payload & mask_for_width(self.width)))
+            }
             tag::BV_NOT => self.convert_child(&node, 0)?.map(|x| !x),
             tag::BV_NEG => self.convert_child(&node, 0)?.map(|x| -x),
             tag::BV_AND => self.nary(reference, tag::BV_AND)?.map(RumbaExpr::And),
@@ -522,16 +521,11 @@ impl<'a> IslandConversion<'a> {
     }
 }
 
-fn simplify_mba_catching_panic(expr: RumbaExpr, bits: u8) -> Option<RumbaExpr> {
-    let _guard = RUMBA_PANIC_HOOK_LOCK.lock().ok()?;
-    let previous_hook = take_hook();
-    set_hook(Box::new(|_| {}));
-    let result = catch_unwind(AssertUnwindSafe(|| simplify_mba(expr, bits))).ok();
-    set_hook(previous_hook);
-    result
-}
-
 fn mask_for_width(width: u32) -> u64 {
     debug_assert!((1..=MAX_RUMBA_WIDTH).contains(&width));
-    make_mask(width as u8)
+    if width >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << width) - 1
+    }
 }
