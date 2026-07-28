@@ -1,11 +1,8 @@
 use std::collections::HashMap;
-use std::panic::{catch_unwind, set_hook, take_hook, AssertUnwindSafe};
-use std::sync::Mutex;
 
 use rumba_core::{
     expr::{Expr as RumbaExpr, VarId},
     simplify::simplify_mba,
-    varint::{make_mask, VarInt},
 };
 use smt_wire::raw::{
     tag, BinaryRequest, Command, ExprBuilder, ExprView, NodeRef, RawNode, SimplifyBlock, WireError,
@@ -14,9 +11,6 @@ use smt_wire::raw::{
 use crate::backend::{Backend, QueryResult, SolveContext};
 
 const MAX_RUMBA_WIDTH: u32 = 64;
-const MAX_RUMBA_VARIABLES: usize = 20;
-
-static RUMBA_PANIC_HOOK_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Default)]
 pub struct RumbaBackend;
@@ -132,7 +126,7 @@ impl<'a> IslandSimplifier<'a> {
 
     /// Convert the MBA island rooted at `reference`, simplify it with Rumba, and lower
     /// the result back into the builder. Returns `None` (so the caller copies the node
-    /// structurally instead) if the island exceeds the variable cap or Rumba panics.
+    /// structurally instead) if Rumba declines the island.
     fn try_island(
         &mut self,
         reference: NodeRef,
@@ -141,14 +135,13 @@ impl<'a> IslandSimplifier<'a> {
         let width = node.width;
         let bits = width as u8;
         let mut conversion = IslandConversion::new(self.view, width);
-        let expr = match conversion.convert(reference)? {
-            Some(expr) => expr,
-            None => return Ok(None),
-        };
+        let expr = conversion.convert(reference)?;
         let vars = conversion.vars;
-        let simplified = match simplify_mba_catching_panic(expr, bits) {
-            Some(simplified) => simplified,
-            None => return Ok(None),
+        // A `SolveError` means Rumba could not handle this island, not that the request
+        // is bad: leave the island alone and let the caller copy it structurally.
+        let simplified = match simplify_mba(expr, bits) {
+            Ok(simplified) => simplified,
+            Err(_) => return Ok(None),
         };
         let root = self.lower(&simplified, width, &vars)?;
         Ok(Some(root))
@@ -172,14 +165,14 @@ impl<'a> IslandSimplifier<'a> {
                     format!("unknown Rumba variable v{}", var.0),
                 )),
             },
-            RumbaExpr::Const(value) => self.builder.bv_const(value.get(mask), width),
+            RumbaExpr::Const(value) => self.builder.bv_const(value & mask, width),
             RumbaExpr::Not(child) => {
                 let child = self.lower(child, width, vars)?;
                 self.builder.bv_not(child)
             }
             RumbaExpr::Scale(coeff, child) => {
                 let child = self.lower(child, width, vars)?;
-                let coeff = self.builder.bv_const(coeff.get(mask), width)?;
+                let coeff = self.builder.bv_const(coeff & mask, width)?;
                 self.builder.bv_mul(coeff, child)
             }
             RumbaExpr::And(children) => {
@@ -413,53 +406,52 @@ impl<'a> IslandConversion<'a> {
 
     /// Convert a subtree to a Rumba expression at the island's width. MBA operators of
     /// the island width recurse; anything else (other ops, a different width, a wide
-    /// constant, a Bool) becomes an opaque boundary variable. Returns `None` only when
-    /// the variable cap is exceeded, in which case the island is abandoned.
-    fn convert(&mut self, reference: NodeRef) -> smt_wire::Result<Option<RumbaExpr>> {
+    /// constant, a Bool) becomes an opaque boundary variable.
+    ///
+    /// Conversion never abandons an island for being too large: Rumba applies its own
+    /// variable limit to each linear sub-MBA after reduction, and reports it as
+    /// `SolveError::TooManyVariables`. A cap applied here would count island leaves
+    /// before reduction, which is a different (and not conservative) number.
+    fn convert(&mut self, reference: NodeRef) -> smt_wire::Result<RumbaExpr> {
         if !reference.is_bv() {
-            return self.boundary(reference);
+            return Ok(self.boundary(reference));
         }
         let node = self.view.node(reference.index())?;
         if node.width != self.width {
-            return self.boundary(reference);
+            return Ok(self.boundary(reference));
         }
         Ok(match node.tag {
             tag::BV_VAR => self.named(reference, &node)?,
-            tag::BV_CONST if node.width <= MAX_RUMBA_WIDTH => Some(RumbaExpr::Const(VarInt::from(
-                node.payload & mask_for_width(self.width),
-            ))),
-            tag::BV_NOT => self.convert_child(&node, 0)?.map(|x| !x),
-            tag::BV_NEG => self.convert_child(&node, 0)?.map(|x| -x),
-            tag::BV_AND => self.nary(reference, tag::BV_AND)?.map(RumbaExpr::And),
-            tag::BV_OR => self.nary(reference, tag::BV_OR)?.map(RumbaExpr::Or),
-            tag::BV_XOR => self.nary(reference, tag::BV_XOR)?.map(RumbaExpr::Xor),
-            tag::BV_ADD => self.nary(reference, tag::BV_ADD)?.map(RumbaExpr::Add),
-            tag::BV_MUL => self.nary(reference, tag::BV_MUL)?.map(RumbaExpr::Mul),
-            tag::BV_SUB => self.children2(&node)?.map(|(a, b)| a - b),
-            _ => return self.boundary(reference),
+            tag::BV_CONST if node.width <= MAX_RUMBA_WIDTH => {
+                RumbaExpr::Const(node.payload & mask_for_width(self.width))
+            }
+            tag::BV_NOT => !self.convert_child(&node, 0)?,
+            tag::BV_NEG => -self.convert_child(&node, 0)?,
+            tag::BV_AND => RumbaExpr::And(self.nary(reference, tag::BV_AND)?),
+            tag::BV_OR => RumbaExpr::Or(self.nary(reference, tag::BV_OR)?),
+            tag::BV_XOR => RumbaExpr::Xor(self.nary(reference, tag::BV_XOR)?),
+            tag::BV_ADD => RumbaExpr::Add(self.nary(reference, tag::BV_ADD)?),
+            tag::BV_MUL => RumbaExpr::Mul(self.nary(reference, tag::BV_MUL)?),
+            tag::BV_SUB => {
+                let (a, b) = self.children2(&node)?;
+                a - b
+            }
+            _ => self.boundary(reference),
         })
     }
 
-    fn convert_child(
-        &mut self,
-        node: &RawNode,
-        offset: u32,
-    ) -> smt_wire::Result<Option<RumbaExpr>> {
+    fn convert_child(&mut self, node: &RawNode, offset: u32) -> smt_wire::Result<RumbaExpr> {
         let child = self.src_child(node, offset)?;
         self.convert(child)
     }
 
-    fn children2(&mut self, node: &RawNode) -> smt_wire::Result<Option<(RumbaExpr, RumbaExpr)>> {
-        let Some(a) = self.convert_child(node, 0)? else {
-            return Ok(None);
-        };
-        let Some(b) = self.convert_child(node, 1)? else {
-            return Ok(None);
-        };
-        Ok(Some((a, b)))
+    fn children2(&mut self, node: &RawNode) -> smt_wire::Result<(RumbaExpr, RumbaExpr)> {
+        let a = self.convert_child(node, 0)?;
+        let b = self.convert_child(node, 1)?;
+        Ok((a, b))
     }
 
-    fn nary(&mut self, root: NodeRef, tag: u8) -> smt_wire::Result<Option<Vec<RumbaExpr>>> {
+    fn nary(&mut self, root: NodeRef, tag: u8) -> smt_wire::Result<Vec<RumbaExpr>> {
         let mut stack = vec![root];
         let mut terms = Vec::new();
         while let Some(reference) = stack.pop() {
@@ -469,18 +461,15 @@ impl<'a> IslandConversion<'a> {
                     stack.push(self.src_child(&node, offset)?);
                 }
             } else {
-                match self.convert(reference)? {
-                    Some(term) => terms.push(term),
-                    None => return Ok(None),
-                }
+                terms.push(self.convert(reference)?);
             }
         }
-        Ok(Some(terms))
+        Ok(terms)
     }
 
-    fn named(&mut self, reference: NodeRef, node: &RawNode) -> smt_wire::Result<Option<RumbaExpr>> {
+    fn named(&mut self, reference: NodeRef, node: &RawNode) -> smt_wire::Result<RumbaExpr> {
         if let Some(&id) = self.by_ref.get(&reference) {
-            return Ok(Some(RumbaExpr::Var(VarId(id))));
+            return Ok(RumbaExpr::Var(VarId(id)));
         }
         let name = self
             .view
@@ -488,29 +477,23 @@ impl<'a> IslandConversion<'a> {
             .to_owned();
         if let Some(&id) = self.by_name.get(&name) {
             self.by_ref.insert(reference, id);
-            return Ok(Some(RumbaExpr::Var(VarId(id))));
-        }
-        if self.vars.len() >= MAX_RUMBA_VARIABLES {
-            return Ok(None);
+            return Ok(RumbaExpr::Var(VarId(id)));
         }
         let id = self.vars.len();
         self.vars.push(IslandVar::Named(name.clone()));
         self.by_ref.insert(reference, id);
         self.by_name.insert(name, id);
-        Ok(Some(RumbaExpr::Var(VarId(id))))
+        Ok(RumbaExpr::Var(VarId(id)))
     }
 
-    fn boundary(&mut self, reference: NodeRef) -> smt_wire::Result<Option<RumbaExpr>> {
+    fn boundary(&mut self, reference: NodeRef) -> RumbaExpr {
         if let Some(&id) = self.by_ref.get(&reference) {
-            return Ok(Some(RumbaExpr::Var(VarId(id))));
-        }
-        if self.vars.len() >= MAX_RUMBA_VARIABLES {
-            return Ok(None);
+            return RumbaExpr::Var(VarId(id));
         }
         let id = self.vars.len();
         self.vars.push(IslandVar::Boundary(reference));
         self.by_ref.insert(reference, id);
-        Ok(Some(RumbaExpr::Var(VarId(id))))
+        RumbaExpr::Var(VarId(id))
     }
 
     fn src_child(&self, node: &RawNode, offset: u32) -> smt_wire::Result<NodeRef> {
@@ -522,16 +505,11 @@ impl<'a> IslandConversion<'a> {
     }
 }
 
-fn simplify_mba_catching_panic(expr: RumbaExpr, bits: u8) -> Option<RumbaExpr> {
-    let _guard = RUMBA_PANIC_HOOK_LOCK.lock().ok()?;
-    let previous_hook = take_hook();
-    set_hook(Box::new(|_| {}));
-    let result = catch_unwind(AssertUnwindSafe(|| simplify_mba(expr, bits))).ok();
-    set_hook(previous_hook);
-    result
-}
-
 fn mask_for_width(width: u32) -> u64 {
     debug_assert!((1..=MAX_RUMBA_WIDTH).contains(&width));
-    make_mask(width as u8)
+    if width >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << width) - 1
+    }
 }

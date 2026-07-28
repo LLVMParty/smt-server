@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 binbit = { git = "https://github.com/bint-disasm/binbit", rev = "b4996145c06f39ce5bbc79a959975d7d20b6cf5e" }
 qfbvsmtrs = { path = "../qfbvsmtrs", features = ["wire"] }
-rumba-core = { git = "https://github.com/thalium/rumba", rev = "2a7a38963f9894cdda24ea93b5f278752aff7a2e" }
+rumba-core = "1.0.0"
 smt-qfbv-smtlib = { path = "../smt-qfbv-smtlib" }
 smt-wire = { path = "../smt-wire" }
 blake3 = "1"
@@ -16,4 +16,4 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 z3 = { version = "0.20.0", features = ["gh-release"] }
 
 [dev-dependencies]
-rumba-core = { git = "https://github.com/thalium/rumba", rev = "2a7a38963f9894cdda24ea93b5f278752aff7a2e", features = ["parse"] }
+rumba-core = { version = "1.0.0", features = ["parse"] }

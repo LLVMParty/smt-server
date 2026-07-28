@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use rumba_core::{expr::Expr as RumbaExpr, parser::parse_expr, varint::make_mask};
+use rumba_core::{expr::Expr as RumbaExpr, parser::parse_expr};
 use smt_server::{handle_binary_frame, RumbaBackend};
 use smt_wire::raw::{
     tag, BinaryResponse, BlobRef, ExprBuilder, ExprView, NodeRef, SimplifyBlock, Status,
@@ -8,7 +8,7 @@ use smt_wire::raw::{
 
 const WIDTH: u32 = 64;
 const BITS: u8 = 64;
-const MASK: u64 = make_mask(BITS);
+const MASK: u64 = mask_for_width(WIDTH);
 const SEMANTIC_TEST_COUNT: usize = 200;
 
 fn build_rumba_expr(
@@ -18,13 +18,13 @@ fn build_rumba_expr(
 ) -> smt_wire::Result<NodeRef> {
     match expr {
         RumbaExpr::Var(var) => builder.bv_var(&format!("v{}", var.0), width),
-        RumbaExpr::Const(c) => builder.bv_const(c.get(mask_for_width(width)), width),
+        RumbaExpr::Const(c) => builder.bv_const(c & mask_for_width(width), width),
         RumbaExpr::Not(child) => {
             let child = build_rumba_expr(builder, child, width)?;
             builder.bv_not(child)
         }
         RumbaExpr::Scale(c, child) => {
-            let coeff = builder.bv_const(c.get(mask_for_width(width)), width)?;
+            let coeff = builder.bv_const(c & mask_for_width(width), width)?;
             let child = build_rumba_expr(builder, child, width)?;
             builder.bv_mul(coeff, child)
         }
@@ -204,7 +204,7 @@ fn child_index(
     Ok(view.child_ref(node.children + offset as u32)?.index() as usize)
 }
 
-fn mask_for_width(width: u32) -> u64 {
+const fn mask_for_width(width: u32) -> u64 {
     if width >= 64 {
         u64::MAX
     } else if width == 0 {
@@ -313,7 +313,7 @@ fn check_rumba_dataset_row(filename: &str, line_index: usize, mba: &str, ground_
             vars.push(rng & MASK);
         }
         let got = compiled_simplified.eval(&vars);
-        let expected = ground_truth.eval(&vars).get(MASK);
+        let expected = ground_truth.eval(&vars, BITS);
         assert_eq!(
             got,
             expected,

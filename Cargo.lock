@@ -1708,14 +1708,16 @@ dependencies = [
 
 [[package]]
 name = "rumba-core"
-version = "0.1.0"
-source = "git+https://github.com/thalium/rumba?rev=2a7a38963f9894cdda24ea93b5f278752aff7a2e#2a7a38963f9894cdda24ea93b5f278752aff7a2e"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9ccbacc940de037bd4ac9f6b57db28f8346531d166d675a0423fb3aad408368"
 dependencies = [
  "indexmap",
  "log",
  "pest",
  "pest_derive",
  "rand",
+ "rustc-hash 2.1.2",
 ]
 
 [[package]]
