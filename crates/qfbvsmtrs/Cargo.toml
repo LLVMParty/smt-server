@@ -1,19 +1,19 @@
 [package]
 name = "qfbvsmtrs"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Standalone pure-Rust QF_BV SMT solver via bit-blasting"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 
 [features]
 default = []
 wire = ["dep:smt-wire"]
 
 [dependencies]
-smt-qfbv-smtlib = { path = "../smt-qfbv-smtlib" }
-smt-wire = { path = "../smt-wire", optional = true }
-varisat = "0.2.2"
-splr = "0.17.2"
+smt-qfbv-smtlib.workspace = true
+smt-wire = { workspace = true, optional = true }
+varisat.workspace = true
+splr.workspace = true
 
 [dev-dependencies]
-z3 = { version = "0.20.0", features = ["gh-release"] }
+z3.workspace = true

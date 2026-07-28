@@ -6,3 +6,28 @@ members = [
     "crates/smt-qfbv-smtlib",
 ]
 resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# Workspace members. `crates/qfbvsmtrs/fuzz` declares its own `[workspace]` and so
+# sits outside this one; it keeps a plain path dependency on qfbvsmtrs.
+qfbvsmtrs = { path = "crates/qfbvsmtrs" }
+smt-qfbv-smtlib = { path = "crates/smt-qfbv-smtlib" }
+smt-wire = { path = "crates/smt-wire" }
+
+# External. z3 has to stay on a single version across the workspace: it is a
+# normal dependency of smt-server and a dev-dependency of qfbvsmtrs, and the
+# gh-release feature downloads a matching prebuilt solver for each.
+binbit = { git = "https://github.com/bint-disasm/binbit", rev = "b4996145c06f39ce5bbc79a959975d7d20b6cf5e" }
+blake3 = "1"
+dashu = { version = "0.4.2", features = ["num-traits"] }
+rumba-core = "1.0.0"
+rusqlite = { version = "0.32", features = ["bundled"] }
+splr = "0.17.2"
+varisat = "0.2.2"
+yaspar = "2.7.0"
+z3 = { version = "0.20.0", features = ["gh-release"] }
