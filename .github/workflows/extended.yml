@@ -26,8 +26,8 @@ jobs:
       - name: Extended random circuit identities
         env:
           QFBVSMTRS_RANDOM_CIRCUIT_SAMPLES: "10000"
-        run: cargo test -p qfbvsmtrs --test random_circuits randomized_wide_circuit_identities_production_when_enabled
+        run: cargo test --locked -p qfbvsmtrs --test random_circuits randomized_wide_circuit_identities_production_when_enabled
       - name: Extended random differential tests against z3
         env:
           QFBVSMTRS_DIFF_RANDOM: "1"
-        run: cargo test -p qfbvsmtrs --test differential_z3 differential_random_formulas_against_z3_production_when_enabled
+        run: cargo test --locked -p qfbvsmtrs --test differential_z3 differential_random_formulas_against_z3_production_when_enabled
