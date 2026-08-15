@@ -39,11 +39,11 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Test
-        run: cargo test --workspace
+        run: cargo test --locked --workspace
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: qfbvsmtrs fuzz crate check
-        run: cargo check --manifest-path crates/qfbvsmtrs/fuzz/Cargo.toml
+        run: cargo check --locked --manifest-path crates/qfbvsmtrs/fuzz/Cargo.toml
       - name: Python client smoke
         run: python python/tests/test_python_client.py
       - name: Python package install smoke
@@ -55,7 +55,7 @@ jobs:
       - name: C++ client CMake smoke
         shell: bash
         run: |
-          cargo build -p smt-server
+          cargo build --locked -p smt-server
           cd cpp
           cmake -B build -DCMAKE_BUILD_TYPE=Debug
           cmake --build build --config Debug
