@@ -1,19 +1,19 @@
 [package]
 name = "smt-server"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Reference SMT wire-format server and backends"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 
 [dependencies]
-binbit = { git = "https://github.com/bint-disasm/binbit", rev = "b4996145c06f39ce5bbc79a959975d7d20b6cf5e" }
-qfbvsmtrs = { path = "../qfbvsmtrs", features = ["wire"] }
-rumba-core = "1.0.0"
-smt-qfbv-smtlib = { path = "../smt-qfbv-smtlib" }
-smt-wire = { path = "../smt-wire" }
-blake3 = "1"
-rusqlite = { version = "0.32", features = ["bundled"] }
-z3 = { version = "0.20.0", features = ["gh-release"] }
+binbit.workspace = true
+qfbvsmtrs = { workspace = true, features = ["wire"] }
+rumba-core.workspace = true
+smt-qfbv-smtlib.workspace = true
+smt-wire.workspace = true
+blake3.workspace = true
+rusqlite.workspace = true
+z3.workspace = true
 
 [dev-dependencies]
-rumba-core = { version = "1.0.0", features = ["parse"] }
+rumba-core = { workspace = true, features = ["parse"] }

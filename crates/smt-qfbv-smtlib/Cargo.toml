@@ -1,10 +1,10 @@
 [package]
 name = "smt-qfbv-smtlib"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 description = "Shared sink-oriented QF_BV SMT-LIB frontend utilities"
-license = "MIT OR Apache-2.0"
+license.workspace = true
 
 [dependencies]
-dashu = { version = "0.4.2", features = ["num-traits"] }
-yaspar = "2.7.0"
+dashu.workspace = true
+yaspar.workspace = true
