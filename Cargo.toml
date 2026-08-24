@@ -24,6 +24,8 @@ smt-wire = { path = "crates/smt-wire" }
 # gh-release feature downloads a matching prebuilt solver for each.
 binbit = { git = "https://github.com/bint-disasm/binbit", rev = "b4996145c06f39ce5bbc79a959975d7d20b6cf5e" }
 blake3 = "1"
+# The crates.io package is `cobra-mba`; the library itself is named `cobra`.
+cobra = { package = "cobra-mba", version = "0.3.0" }
 dashu = { version = "0.4.2", features = ["num-traits"] }
 rumba-core = "1.0.0"
 rusqlite = { version = "0.32", features = ["bundled"] }

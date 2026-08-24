@@ -13,7 +13,7 @@ The server is intentionally stateless at the protocol boundary. Every request co
 | Path | Role |
 |---|---|
 | `crates/smt-wire` | Rust protocol/client crate. It owns wire constants, expression validation, request/response codecs, high-level Rust `Context`/term APIs, and a TCP client. |
-| `crates/smt-server` | TCP server, binary/text dispatch, response cache, backend trait, backend racing, and integrations for Z3, binbit, qfbvsmtrs, and Rumba. |
+| `crates/smt-server` | TCP server, binary/text dispatch, response cache, backend trait, backend racing, and integrations for Z3, binbit, qfbvsmtrs, Rumba, and CoBRA. |
 | `crates/smt-qfbv-smtlib` | Shared solver-agnostic QF_BV/Bool SMT-LIB frontend. It parses with `yaspar` and lowers through a sink trait. |
 | `crates/qfbvsmtrs` | Standalone pure-Rust QF_BV solver. It can be used directly, through its SMT-LIB frontend, or as a server backend through the `smt-wire` bridge. |
 | `python` | Dependency-free Python client package (`smt_wire.py`) plus examples/tests. Install from this repo with pip's `#subdirectory=python` support. |
@@ -73,7 +73,9 @@ The shipped binary in `crates/smt-server/src/main.rs` builds this backend stack:
 
 ```text
 CommandRouterBackend
-├── SIMPLIFY  -> RumbaBackend
+├── SIMPLIFY  -> SimplifyChainBackend
+│              ├── RumbaBackend
+│              └── CobraBackend
 └── SOLVE / MINIMIZE / MAXIMIZE
     -> RacingBackend(default budget: 30s)
        ├── Z3Backend
@@ -87,6 +89,8 @@ Backend responsibilities:
 - `BinbitBackend` translates validated wire IR to `binbit` and supports solve, model extraction, named unsat cores, and optimization helpers.
 - `QfbvsmtrsBackend` lowers wire requests into the standalone qfbvsmtrs IR and uses the pure-Rust bit-blast/SAT pipeline.
 - `RumbaBackend` handles `SIMPLIFY` for supported 64-bit-or-smaller MBA expression islands. Unsupported simplifications return the original target expression rather than a wrong rewrite.
+- `CobraBackend` handles `SIMPLIFY` with the [CoBRA](https://github.com/binsnake/cobra) worklist-driven MBA simplifier, using the same island extraction as Rumba. By default it only adopts rewrites CoBRA backs with a replayable Lean certificate; a spot-checked mode trades that guarantee for a higher simplification rate.
+- `SimplifyChainBackend` runs simplifier backends in sequence, feeding each stage the previous stage's output and skipping stages that decline.
 
 `RacingBackend` returns the first conclusive answer and logs later disagreements for investigation. `UNKNOWN` is safe and means no backend produced a conclusive answer within the applicable budget.
 
