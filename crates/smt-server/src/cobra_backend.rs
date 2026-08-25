@@ -133,20 +133,37 @@ fn is_mba_op(tag: u8) -> bool {
     )
 }
 
+/// Total island-conversion node visits allowed per request, as a multiple of
+/// the input's node count (plus a floor so small requests get full attempts).
+///
+/// A declined maximal island is retried on each of its subtrees, and CoBRA's
+/// tree conversion re-expands shared wire DAG nodes on every visit, so without
+/// a shared cap an adversarial unsimplifiable expression could turn one
+/// bounded request into quadratic (or, through sharing, exponential)
+/// conversion work and unbounded repeat runs of CoBRA's search pipeline. Once
+/// the budget is spent, remaining islands are copied structurally.
+const ISLAND_BUDGET_FACTOR: usize = 8;
+const ISLAND_BUDGET_FLOOR: usize = 1 << 14;
+
 struct IslandSimplifier<'a> {
     view: ExprView<'a>,
     builder: ExprBuilder,
     memo: HashMap<NodeRef, NodeRef>,
     require_certificate: bool,
+    conversion_budget: usize,
 }
 
 impl<'a> IslandSimplifier<'a> {
     fn new(view: ExprView<'a>, require_certificate: bool) -> Self {
+        let conversion_budget = (view.node_count() as usize)
+            .saturating_mul(ISLAND_BUDGET_FACTOR)
+            .max(ISLAND_BUDGET_FLOOR);
         Self {
             view,
             builder: ExprBuilder::new(),
             memo: HashMap::new(),
             require_certificate,
+            conversion_budget,
         }
     }
 
@@ -161,7 +178,11 @@ impl<'a> IslandSimplifier<'a> {
 
     fn process_uncached(&mut self, reference: NodeRef) -> smt_wire::Result<NodeRef> {
         let node = self.view.node(reference.index())?;
-        if reference.is_bv() && is_mba_op(node.tag) && (1..=MAX_COBRA_WIDTH).contains(&node.width) {
+        if reference.is_bv()
+            && is_mba_op(node.tag)
+            && (1..=MAX_COBRA_WIDTH).contains(&node.width)
+            && self.conversion_budget > 0
+        {
             if let Some(simplified) = self.try_island(reference, &node)? {
                 return Ok(simplified);
             }
@@ -179,8 +200,14 @@ impl<'a> IslandSimplifier<'a> {
         node: &RawNode,
     ) -> smt_wire::Result<Option<NodeRef>> {
         let width = node.width;
-        let mut conversion = IslandConversion::new(self.view, width);
-        let expr = conversion.convert(reference)?;
+        let mut conversion = IslandConversion::new(self.view, width, &mut self.conversion_budget);
+        // A conversion failure (typically the shared budget running out) means
+        // this island is skipped, not that the request is bad: the caller
+        // copies the node structurally and any real structural defect
+        // resurfaces there.
+        let Ok(expr) = conversion.convert(reference) else {
+            return Ok(None);
+        };
         let vars = conversion.vars;
         let names = island_var_names(&vars);
         let options = CobraOptions {
@@ -511,22 +538,26 @@ fn island_var_names(vars: &[IslandVar]) -> Vec<String> {
         .collect()
 }
 
-struct IslandConversion<'a> {
+struct IslandConversion<'a, 'b> {
     view: ExprView<'a>,
     width: u32,
     vars: Vec<IslandVar>,
     by_name: HashMap<String, usize>,
     by_ref: HashMap<NodeRef, usize>,
+    /// Node-visit budget shared across every island attempt of one request;
+    /// see [`ISLAND_BUDGET_FACTOR`].
+    budget: &'b mut usize,
 }
 
-impl<'a> IslandConversion<'a> {
-    fn new(view: ExprView<'a>, width: u32) -> Self {
+impl<'a, 'b> IslandConversion<'a, 'b> {
+    fn new(view: ExprView<'a>, width: u32, budget: &'b mut usize) -> Self {
         Self {
             view,
             width,
             vars: Vec::new(),
             by_name: HashMap::new(),
             by_ref: HashMap::new(),
+            budget,
         }
     }
 
@@ -539,6 +570,9 @@ impl<'a> IslandConversion<'a> {
     /// its own variable and node budgets in `simplify_expr` and the resulting
     /// error makes the caller copy the island structurally.
     fn convert(&mut self, reference: NodeRef) -> smt_wire::Result<Arc<CobraExpr>> {
+        *self.budget = self.budget.checked_sub(1).ok_or_else(|| {
+            WireError::invalid("simplify", "cobra island conversion budget exhausted")
+        })?;
         if !reference.is_bv() {
             return Ok(self.boundary(reference));
         }

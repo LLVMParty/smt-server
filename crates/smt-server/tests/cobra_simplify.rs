@@ -150,6 +150,24 @@ fn unimproved_islands_keep_their_skeleton() {
     assert_eq!(count(tag::BV_ADD), 1, "add skeleton not preserved");
 }
 
+/// A deep doubling chain shares each node on both sides of an add, so tree
+/// conversion without the shared island budget would take ~2^48 visits. The
+/// budget must cut the attempts and fall back to a structural copy quickly.
+#[test]
+fn bounds_conversion_work_on_shared_dags() {
+    let mut b = ExprBuilder::new();
+    let x = b.bv_var("x", 64).unwrap();
+    let mut acc = x;
+    for _ in 0..48 {
+        acc = b.bv_add(acc, acc).unwrap();
+    }
+
+    let tags = tag_counts(&simplify(&b, acc));
+    let count = |t: u8| tags.iter().filter(|&&n| n == t).count();
+    assert_eq!(count(tag::BV_ADD), 48, "doubling chain not preserved");
+    assert_eq!(count(tag::BV_VAR), 1, "shared variable not preserved");
+}
+
 /// The chain feeds Rumba's output into CoBRA; each backend's specialty lands
 /// in one pass through the chain.
 #[test]
