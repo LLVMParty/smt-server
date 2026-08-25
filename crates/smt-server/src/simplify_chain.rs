@@ -38,13 +38,8 @@ impl SimplifyChainBackend {
             target_node: target,
         };
         for stage in &self.stages {
-            // Match the backend cancellation convention: a cancelled request
-            // returns an inconclusive result, never a (vacuously valid)
-            // identity simplification that a racing layer could adopt.
             if context.is_some_and(SolveContext::is_cancelled) {
-                return Ok(QueryResult::unknown(
-                    "simplify chain request cancelled before completion",
-                ));
+                return Ok(cancelled_result());
             }
             let Ok(stage_request) = request_for_block(request, &current) else {
                 break;
@@ -65,8 +60,20 @@ impl SimplifyChainBackend {
                 current = block;
             }
         }
+        // Match the backend cancellation convention: a cancelled request
+        // returns an inconclusive result, never a (vacuously valid) identity
+        // simplification that a racing layer could adopt. Cancellation can
+        // also arrive while the final stage runs, so check again on the way
+        // out, not only before each stage.
+        if context.is_some_and(SolveContext::is_cancelled) {
+            return Ok(cancelled_result());
+        }
         Ok(QueryResult::simplified(current))
     }
+}
+
+fn cancelled_result() -> QueryResult {
+    QueryResult::unknown("simplify chain request cancelled before completion")
 }
 
 /// Rewrap a stage's output as the next stage's input request, keeping the

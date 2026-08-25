@@ -191,6 +191,58 @@ fn chain_falls_back_to_identity() {
     assert_eq!(count(tag::BV_UDIV), 1, "udiv not preserved");
 }
 
+/// Cancellation arriving while the final stage runs must also surface as an
+/// inconclusive result, not as the last good block.
+#[test]
+fn chain_observes_mid_stage_cancellation() {
+    use smt_server::{CancellationToken, QueryResult, SolveContext};
+    use smt_wire::raw::BinaryRequest;
+
+    /// Stage that cancels the request while handling it, like a racing layer
+    /// reacting to another backend's win mid-flight.
+    struct CancelDuringHandle(CancellationToken);
+
+    impl Backend for CancelDuringHandle {
+        fn name(&self) -> &'static str {
+            "cancel-during-handle"
+        }
+
+        fn handle(&self, _request: &BinaryRequest) -> smt_wire::Result<QueryResult> {
+            Ok(QueryResult::unknown("cancelled mid-stage"))
+        }
+
+        fn handle_with_context(
+            &self,
+            request: &BinaryRequest,
+            _context: &SolveContext,
+        ) -> smt_wire::Result<QueryResult> {
+            self.0.cancel();
+            self.handle(request)
+        }
+    }
+
+    let cancellation = CancellationToken::new();
+    let chain = SimplifyChainBackend::new(vec![Arc::new(CancelDuringHandle(cancellation.clone()))]);
+
+    let mut b = ExprBuilder::new();
+    let x = b.bv_var("x", 64).unwrap();
+    let y = b.bv_var("y", 64).unwrap();
+    let target = b.bv_xor(x, y).unwrap();
+    let request = BinaryRequest::parse(&b.build_simplify_request(1, target).unwrap()).unwrap();
+
+    let context = SolveContext::new(cancellation);
+    let result = chain.handle_with_context(&request, &context).unwrap();
+    assert!(!result.is_conclusive(), "chain returned {result:?}");
+    assert!(
+        result
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("cancelled"),
+        "missing cancellation message: {result:?}"
+    );
+}
+
 /// A pre-cancelled context yields an inconclusive result, matching the
 /// backend cancellation convention, instead of an identity simplification.
 #[test]
