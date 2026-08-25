@@ -190,3 +190,36 @@ fn chain_falls_back_to_identity() {
     let count = |t: u8| tags.iter().filter(|&&n| n == t).count();
     assert_eq!(count(tag::BV_UDIV), 1, "udiv not preserved");
 }
+
+/// A pre-cancelled context yields an inconclusive result, matching the
+/// backend cancellation convention, instead of an identity simplification.
+#[test]
+fn chain_observes_pre_cancelled_context() {
+    use smt_server::{CancellationToken, SolveContext};
+    use smt_wire::raw::BinaryRequest;
+
+    let chain = SimplifyChainBackend::new(vec![
+        Arc::new(RumbaBackend),
+        Arc::new(CobraBackend::default()),
+    ]);
+
+    let mut b = ExprBuilder::new();
+    let x = b.bv_var("x", 64).unwrap();
+    let y = b.bv_var("y", 64).unwrap();
+    let target = b.bv_xor(x, y).unwrap();
+    let request = BinaryRequest::parse(&b.build_simplify_request(1, target).unwrap()).unwrap();
+
+    let cancellation = CancellationToken::new();
+    cancellation.cancel();
+    let context = SolveContext::new(cancellation);
+    let result = chain.handle_with_context(&request, &context).unwrap();
+    assert!(!result.is_conclusive(), "chain returned {result:?}");
+    assert!(
+        result
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("cancelled"),
+        "missing cancellation message: {result:?}"
+    );
+}
