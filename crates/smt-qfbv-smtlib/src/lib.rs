@@ -527,7 +527,7 @@ pub fn parse_annotation(items: &[SExpr]) -> Result<Option<(&SExpr, Option<String
         ));
     }
     let mut name = None;
-    for pair in items[2..].chunks_exact(2) {
+    for pair in items[2..].as_chunks::<2>().0 {
         let key = atom(&pair[0])?;
         if !key.starts_with(':') {
             return Err(FrontendError::invalid(
