@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use smt_server::{
     default_legacy_recording_tree, migrate_recording_tree, recording_db_path, serve_tcp,
-    BinbitBackend, CommandRouterBackend, QfbvsmtrsBackend, RacingBackend, RumbaBackend,
-    ServerConfig, Z3Backend,
+    BinbitBackend, CobraBackend, CommandRouterBackend, QfbvsmtrsBackend, RacingBackend,
+    RumbaBackend, ServerConfig, SimplifyChainBackend, Z3Backend,
 };
 
 fn main() -> std::io::Result<()> {
@@ -23,9 +23,13 @@ fn main() -> std::io::Result<()> {
         ])
         .with_default_budget_ms(30_000),
     );
-    let backend = Arc::new(CommandRouterBackend::new(Arc::new(RumbaBackend), solver));
+    let simplifier = Arc::new(SimplifyChainBackend::new(vec![
+        Arc::new(RumbaBackend),
+        Arc::new(CobraBackend::default()),
+    ]));
+    let backend = Arc::new(CommandRouterBackend::new(simplifier, solver));
     eprintln!(
-        "smt-server listening on {addr} with rumba simplifier + racing solver (z3 crate + binbit + qfbvsmtrs)"
+        "smt-server listening on {addr} with rumba + cobra simplifier chain + racing solver (z3 crate + binbit + qfbvsmtrs)"
     );
     serve_tcp(addr, ServerConfig::new(backend))
 }

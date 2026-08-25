@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 binbit.workspace = true
+cobra.workspace = true
 qfbvsmtrs = { workspace = true, features = ["wire"] }
 rumba-core.workspace = true
 smt-qfbv-smtlib.workspace = true

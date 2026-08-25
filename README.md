@@ -13,7 +13,7 @@ It targets binary analysis, lifting, symbolic execution, and IR experiments wher
 ## Backends
 
 - Solve and optimize: [`z3`](https://docs.rs/z3/latest/z3/), [`binbit`](https://github.com/bint-disasm/binbit), and the standalone `qfbvsmtrs` crate.
-- Simplify: [Rumba](https://github.com/thalium/rumba) for supported 64-bit-or-smaller MBA expression islands.
+- Simplify: [Rumba](https://github.com/thalium/rumba) and [CoBRA](https://github.com/binsnake/cobra) run as a chain over supported 64-bit-or-smaller MBA expression islands; CoBRA adopts only Lean-certified rewrites by default.
 - Text compatibility: SMT-LIB `QF_BV` scripts are parsed into the same binary IR used by binary clients.
 
 The binary protocol is the main API. SMT-LIB support exists for tooling compatibility and test reuse.
@@ -225,7 +225,7 @@ See `docs/qfbvsmtrs-validation.md` for maintainer validation gates and corpus-ru
 
 - `crates/smt-wire` — Rust high-level client API plus server-side wire-format internals and validators.
 - `crates/qfbvsmtrs` — standalone pure-Rust `QF_BV` bit-blasting solver crate and CLI.
-- `crates/smt-server` — TCP server, Rumba simplifier integration, solver backend integration, SMT-LIB frontend.
+- `crates/smt-server` — TCP server, Rumba and CoBRA simplifier integrations, solver backend integration, SMT-LIB frontend.
 - `python` — Python client package and tests.
 - `cpp` — C++17 header-only package, CMake target, and tests.
 - `docs/architecture.md` — current crate/server/backend architecture.
